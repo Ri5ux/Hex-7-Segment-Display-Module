@@ -45,13 +45,14 @@ const int PIN_BT_TX = 10;
 SoftwareSerial bluetooth(PIN_BT_RX, PIN_BT_TX); //RX, TX
 boolean streamData = false;
 long previousMillis = 0;
+boolean atMode = false;
 
 float scaleValue = 0;
 
 void(* resetFunc) (void) = 0;
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   printf_begin();
   Serial.println("Hex Segment Display Controller");
   Serial.println("ASX Electronics");
@@ -65,7 +66,7 @@ void setup() {
   radio.printDetails();
   
   Serial.println("[bluetooth] init");
-  bluetooth.begin(9600);
+  bluetooth.begin(115200);
   bluetooth.println("[bluetooth] ready");
 
   Serial.println("[init] display");
@@ -86,43 +87,60 @@ void setup() {
 }
 
 void loop() {
-  handleBluetoothCommands();
-  handleRadio();
-  
-  if (Serial.available() > 0) {
-   char incomingCharacter = Serial.read();
-   switch (incomingCharacter) {
-     case '1':
-      displayBuffer[0][0] = (uint8_t)Serial.parseInt();
-      break;
-     case '2':
-      displayBuffer[0][1] = (uint8_t)Serial.parseInt();
-      break;
-     case '3':
-      displayBuffer[0][2] = (uint8_t)Serial.parseInt();
-      break;
-     case '4':
-      displayBuffer[1][0] = (uint8_t)Serial.parseInt();
-      break;
-     case '5':
-      displayBuffer[1][1] = (uint8_t)Serial.parseInt();
-      break;
-     case '6':
-      displayBuffer[1][2] = (uint8_t)Serial.parseInt();
-      break;
-     case 'r':
-      Serial.println("reset");
-      resetFunc();
-      break;
-     case 't':
-      Serial.println("transmit");
-      pingRF();
-      break;
+  if (atMode) {
+    if (bluetooth.available()) {
+      Serial.write(bluetooth.read());
     }
+  
+    if (Serial.available()) {
+      bluetooth.write(Serial.read());
+    }
+  } else {
+    handleBluetoothCommands();
+    handleRadio();
+    
+    if (Serial.available() > 0) {
+     char incomingCharacter = Serial.read();
+     switch (incomingCharacter) {
+       case '1':
+        displayBuffer[0][0] = (uint8_t)Serial.parseInt();
+        break;
+       case '2':
+        displayBuffer[0][1] = (uint8_t)Serial.parseInt();
+        break;
+       case '3':
+        displayBuffer[0][2] = (uint8_t)Serial.parseInt();
+        break;
+       case '4':
+        displayBuffer[1][0] = (uint8_t)Serial.parseInt();
+        break;
+       case '5':
+        displayBuffer[1][1] = (uint8_t)Serial.parseInt();
+        break;
+       case '6':
+        displayBuffer[1][2] = (uint8_t)Serial.parseInt();
+        break;
+       case 'b':
+        Serial.println("AT Mode Activated");
+        Serial.println("Use NL+CR Line Endings");
+        Serial.println("Baud Rate: 38400");
+        bluetooth.begin(38400);
+        atMode = true;
+        break;
+       case 'r':
+        Serial.println("reset");
+        resetFunc();
+        break;
+       case 't':
+        Serial.println("transmit");
+        pingRF();
+        break;
+      }
+    }
+  
+    driveDisplay();
+    handleBTData();
   }
-
-  driveDisplay();
-  handleBTData();
 }
 
 void handleRadio() {
@@ -149,7 +167,7 @@ void handleRadio() {
 void handleBTData() {
   long currentMillis = millis();
   
-  if(currentMillis - previousMillis > 500) {
+  if(currentMillis - previousMillis > 200) {
     previousMillis = currentMillis;
     
     if (streamData) {
@@ -175,6 +193,13 @@ void handleBluetoothCommands() {
       bluetooth.println(scaleValue);
     } else if (command == "stream") {
       streamData = true;
+    } else if (command == "test") {
+      displayBuffer[0][0] = 0;
+      displayBuffer[0][1] = 0;
+      displayBuffer[0][2] = 0;
+      displayBuffer[1][0] = 0;
+      displayBuffer[1][1] = 0;
+      displayBuffer[1][2] = 0;
     }
   }
 }
