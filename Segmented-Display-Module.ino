@@ -2,6 +2,7 @@
 
 #include <RF24.h>
 #include <printf.h> 
+#include <SoftwareSerial.h>
 
 static const byte NUM_MATRIX[16][4] = { 
   { 0,0,0,0 }, //0
@@ -37,6 +38,16 @@ static uint8_t displayBuffer[DRIVERS][DISPLAYS] = {
 RF24 radio(7, 8);
 const byte addresses[][6] = {"10002", "10001"};
 
+const int PIN_BT_RX = 9;
+const int PIN_BT_TX = 10;
+
+/** Bluetooth (HXC-05) **/
+SoftwareSerial bluetooth(PIN_BT_RX, PIN_BT_TX); //RX, TX
+boolean streamData = false;
+long previousMillis = 0;
+
+float scaleValue = 0;
+
 void(* resetFunc) (void) = 0;
 
 void setup() {
@@ -52,6 +63,10 @@ void setup() {
   radio.openReadingPipe(1, addresses[0]);
   radio.setPALevel(RF24_PA_LOW);
   radio.printDetails();
+  
+  Serial.println("[bluetooth] init");
+  bluetooth.begin(9600);
+  bluetooth.println("[bluetooth] ready");
 
   Serial.println("[init] display");
   
@@ -71,22 +86,8 @@ void setup() {
 }
 
 void loop() {
-  delay(1);
-  radio.startListening();
-  
-  if (radio.available()) {
-    int values[6] = {0};
-    radio.read(&values, sizeof(values));
-    displayBuffer[0][0] = values[0];
-    displayBuffer[0][1] = values[1];
-    displayBuffer[0][2] = values[2];
-    displayBuffer[1][0] = values[3];
-    displayBuffer[1][1] = values[4];
-    displayBuffer[1][2] = values[5];
-  }
-
-  delay(1);
-  radio.stopListening();
+  handleBluetoothCommands();
+  handleRadio();
   
   if (Serial.available() > 0) {
    char incomingCharacter = Serial.read();
@@ -121,6 +122,61 @@ void loop() {
   }
 
   driveDisplay();
+  handleBTData();
+}
+
+void handleRadio() {
+  
+  delay(1);
+  radio.startListening();
+  
+  if (radio.available()) {
+    float values[7] = {0};
+    radio.read(&values, sizeof(values));
+    displayBuffer[0][0] = values[0];
+    displayBuffer[0][1] = values[1];
+    displayBuffer[0][2] = values[2];
+    displayBuffer[1][0] = values[3];
+    displayBuffer[1][1] = values[4];
+    displayBuffer[1][2] = values[5];
+    scaleValue = values[6];
+  }
+
+  delay(1);
+  radio.stopListening();
+}
+
+void handleBTData() {
+  long currentMillis = millis();
+  
+  if(currentMillis - previousMillis > 500) {
+    previousMillis = currentMillis;
+    
+    if (streamData) {
+      bluetooth.print("value: ");
+      bluetooth.println(scaleValue);
+    }
+  }
+}
+
+void handleBluetoothCommands() {
+  if (bluetooth.available()) {
+    String command = bluetooth.readStringUntil('\n');
+    bluetooth.read();
+    bluetooth.print(">");
+    bluetooth.println(command);
+    
+    if (command == "reset") {
+      bluetooth.println("reset");
+      delay(100);
+      resetFunc();
+    } else if (command == "read") {
+      bluetooth.print("read: ");
+      bluetooth.println(scaleValue);
+    } else if (command == "stream") {
+      streamData = true;
+    }
+  }
 }
 
 void driveDisplay() {
